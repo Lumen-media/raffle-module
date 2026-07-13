@@ -393,6 +393,9 @@ export function createRaffleScreen() {
     const [wheelColors, setWheelColors] = useState(DEFAULT_WHEEL_COLORS);
     const [wheelTextColor, setWheelTextColor] = useState("#ffffff");
     const [primaryRgb, setPrimaryRgb] = useState<RgbColor | null>(null);
+    const [viewportWidth, setViewportWidth] = useState(() =>
+      typeof window === "undefined" ? 0 : window.innerWidth
+    );
 
     useEffect(() => {
       setDoneTiles(0);
@@ -419,6 +422,14 @@ export function createRaffleScreen() {
       return () => observer.disconnect();
     }, []);
 
+    useEffect(() => {
+      if (typeof window === "undefined") return;
+      const handleResize = () => setViewportWidth(window.innerWidth);
+      handleResize();
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
+    }, []);
+
     const handleTileDone = () => setDoneTiles((n) => n + 1);
 
     const wheelData = participants.length === 0
@@ -432,8 +443,32 @@ export function createRaffleScreen() {
     const glowStyle: CSSProperties = p
       ? { color: "white", textShadow: `0 0 40px rgba(${p.r},${p.g},${p.b},0.5), 0 0 100px rgba(${p.r},${p.g},${p.b},0.25), 0 2px 8px rgba(0,0,0,0.8)` }
       : { color: "white", textShadow: "0 2px 8px rgba(0,0,0,0.8)" };
-    const slotPlaceholderWidth = Math.min(720, Math.max(400, fontSize * 9));
+    const screenStyle: CSSProperties = {
+      width: "100vw",
+      height: "100vh",
+      fontFamily: fontFamily || undefined,
+      backgroundColor: undefined,
+    };
+    const slotTileWidth = Math.round(fontSize * 1.4);
+    const slotTileGap = Math.round(fontSize * 0.35);
+    const slotWordGap = Math.round(fontSize * 0.9);
+    const slotContentWidth = words.reduce((total, word, index) => {
+      const letterCount = word.length;
+      const wordWidth = letterCount > 0
+        ? letterCount * slotTileWidth + Math.max(0, letterCount - 1) * slotTileGap
+        : 0;
+      return total + wordWidth + (index > 0 ? slotWordGap : 0);
+    }, 0);
+    const slotPlaceholderWidth = Math.max(400, fontSize * 9, slotContentWidth);
     const slotPlaceholderHeight = Math.round(fontSize * 1.8);
+    const slotCardPaddingX = 112;
+    const slotViewportGutter = 64;
+    const slotMaxContentWidth = viewportWidth > 0
+      ? Math.max(240, viewportWidth - slotCardPaddingX - slotViewportGutter)
+      : slotPlaceholderWidth;
+    const slotScale = Math.min(1, slotMaxContentWidth / slotPlaceholderWidth);
+    const slotVisibleWidth = Math.ceil(slotPlaceholderWidth * slotScale);
+    const slotVisibleHeight = Math.ceil(slotPlaceholderHeight * slotScale);
 
     const tilesContent = words.length > 0 && (
       <div className="flex items-center">
@@ -472,7 +507,7 @@ export function createRaffleScreen() {
       return (
         <div
           className="w-full h-full relative flex flex-col items-center justify-center gap-6 select-none"
-          style={{ fontFamily: fontFamily || undefined }}
+          style={screenStyle}
         >
           <p className="text-3xl tracking-[0.3em] uppercase" style={glowStyle}>
             {t("screen.current_raffle")}
@@ -502,7 +537,7 @@ export function createRaffleScreen() {
       return (
         <div
           className="w-full h-full relative flex flex-col items-center justify-center gap-6 select-none"
-          style={{ fontFamily: fontFamily || undefined }}
+          style={screenStyle}
         >
           <p className="text-3xl tracking-[0.3em] uppercase" style={glowStyle}>
             {t("screen.current_raffle")}
@@ -535,10 +570,7 @@ export function createRaffleScreen() {
     return (
       <div
         className="w-full h-full relative flex flex-col items-center justify-center gap-8 select-none"
-        style={{
-          fontFamily: fontFamily || undefined,
-          backgroundColor: undefined,
-        }}
+        style={screenStyle}
       >
         <p className="text-3xl tracking-[0.3em] uppercase" style={glowStyle}>
           {t("screen.current_raffle")}
@@ -549,13 +581,27 @@ export function createRaffleScreen() {
             className="flex flex-col items-center shadow-2xl bg-card"
             style={{
               padding: "48px 56px",
-              minWidth: slotPlaceholderWidth,
-              minHeight: slotPlaceholderHeight + 80,
+              width: slotVisibleWidth + slotCardPaddingX,
+              maxWidth: `calc(100vw - ${slotViewportGutter}px)`,
+              minHeight: slotVisibleHeight + 80,
             }}
           >
-            <div style={{ position: "relative", width: slotPlaceholderWidth, height: slotPlaceholderHeight }}>
+            <div style={{ position: "relative", width: slotVisibleWidth, height: slotVisibleHeight, overflow: "hidden" }}>
               {tilesContent && (
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    top: "50%",
+                    width: slotPlaceholderWidth,
+                    height: slotPlaceholderHeight,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transform: `translate(-50%, -50%) scale(${slotScale})`,
+                    transformOrigin: "center",
+                  }}
+                >
                   {tilesContent}
                 </div>
               )}

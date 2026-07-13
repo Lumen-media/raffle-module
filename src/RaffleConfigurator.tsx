@@ -46,6 +46,13 @@ const DEFAULT_SETTINGS: RaffleSettings = {
   wheelRemoveDrawn: false,
 };
 
+interface ParticipantLine {
+  name: string;
+  raffled: boolean;
+}
+
+const RAFFLED_MARKER_PREFIX = /^(\s*)(?:\\?\*)+(?=\S)/;
+
 function stripMarkdownLine(line: string): string {
   return line
     .replace(/^#{1,6}\s+/, "")
@@ -59,20 +66,37 @@ function stripMarkdownLine(line: string): string {
     .trim();
 }
 
-function parseNames(text: string, removeDuplicates: boolean): string[] {
-  const names = text.split("\n").map(stripMarkdownLine).filter((n) => n.length > 0);
-  if (removeDuplicates) return [...new Set(names)];
-  return names;
+function parseParticipantLine(line: string): ParticipantLine {
+  const markerMatch = line.match(RAFFLED_MARKER_PREFIX);
+  const raffled = Boolean(markerMatch);
+  const content = markerMatch ? line.slice(markerMatch[0].length) : line;
+  return { name: stripMarkdownLine(content), raffled };
+}
+
+function parseParticipants(text: string, removeDuplicates: boolean): ParticipantLine[] {
+  const participants = text
+    .split("\n")
+    .map(parseParticipantLine)
+    .filter((participant) => participant.name.length > 0);
+
+  if (!removeDuplicates) return participants;
+
+  const seen = new Set<string>();
+  return participants.filter((participant) => {
+    if (seen.has(participant.name)) return false;
+    seen.add(participant.name);
+    return true;
+  });
 }
 
 function addRaffledMarker(text: string, drawnName: string): string {
   let marked = false;
   return text.split("\n").map((line) => {
     if (marked) return line;
-    const stripped = stripMarkdownLine(line);
-    if (!stripped.startsWith("*") && stripped === drawnName) {
+    const participant = parseParticipantLine(line);
+    if (!participant.raffled && participant.name === drawnName) {
       marked = true;
-      return "*" + stripped;
+      return "*" + participant.name;
     }
     return line;
   }).join("\n");
@@ -80,8 +104,7 @@ function addRaffledMarker(text: string, drawnName: string): string {
 
 function removeRaffledMarkers(text: string): string {
   return text.split("\n").map((line) => {
-    const stripped = stripMarkdownLine(line);
-    return stripped.startsWith("*") ? stripped.slice(1) : line;
+    return line.replace(RAFFLED_MARKER_PREFIX, "$1");
   }).join("\n");
 }
 
@@ -135,12 +158,10 @@ export function createRaffleConfigurator(host: LumenHost) {
       return () => d.dispose();
     }, []);
 
-    const eligible = (() => {
-      const all = parseNames(participants, removeDuplicates);
-      if (doNotRepeat) return all.filter((n) => !n.startsWith("*"));
-      const clean = all.map((n) => (n.startsWith("*") ? n.slice(1) : n));
-      return removeDuplicates ? [...new Set(clean)] : clean;
-    })();
+    const parsedParticipants = parseParticipants(participants, removeDuplicates);
+    const eligible = parsedParticipants
+      .filter((participant) => !doNotRepeat || !participant.raffled)
+      .map((participant) => participant.name);
 
     const saveSettings = async (next: RaffleSettings) => {
       setSettings(next);
@@ -198,10 +219,11 @@ export function createRaffleConfigurator(host: LumenHost) {
       }
     };
 
-    const allNames = () => parseNames(participants, removeDuplicates).map((n) => n.startsWith("*") ? n.slice(1) : n);
+    const allNames = () => parsedParticipants.map((participant) => participant.name);
+    const presentationNames = () => (doNotRepeat || settings.wheelRemoveDrawn ? eligible : allNames());
 
     const handleStart = () => {
-      const wheelParticipants = settings.wheelRemoveDrawn ? eligible : allNames();
+      const wheelParticipants = presentationNames();
       host.presentation.project("raffle-module.raffle-screen", {
         name: null, animationKey: 0, ...settings, participants: wheelParticipants, prizeIndex: -1,
       });
@@ -215,7 +237,7 @@ export function createRaffleConfigurator(host: LumenHost) {
       }
       const currentEligible = [...eligible];
       const name = currentEligible[Math.floor(Math.random() * currentEligible.length)];
-      const wheelParticipants = settings.wheelRemoveDrawn ? currentEligible : allNames();
+      const wheelParticipants = doNotRepeat || settings.wheelRemoveDrawn ? currentEligible : allNames();
       const prizeIndex = wheelParticipants.indexOf(name);
 
       if (doNotRepeat) {
@@ -268,7 +290,7 @@ export function createRaffleConfigurator(host: LumenHost) {
 
     const sortedRaffled = [...alreadyRaffled].sort((a, b) => b.order - a.order);
     const activeList = lists.find((l) => l.id === activeListId);
-    const countNames = (text: string) => parseNames(text, false).filter(n => !n.startsWith("*")).length;
+    const countNames = (text: string) => parseParticipants(text, false).filter((participant) => !participant.raffled).length;
     const fontOptions = systemFonts.length > 0 ? systemFonts : [
       "Arial", "Georgia", "Impact", "Segoe UI", "Tahoma", "Times New Roman", "Verdana",
     ];
