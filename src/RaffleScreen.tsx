@@ -393,7 +393,8 @@ export function createRaffleScreen() {
     const [wheelColors, setWheelColors] = useState(DEFAULT_WHEEL_COLORS);
     const [wheelTextColor, setWheelTextColor] = useState("#ffffff");
     const [primaryRgb, setPrimaryRgb] = useState<RgbColor | null>(null);
-    const [viewportWidth, setViewportWidth] = useState(() =>
+    const screenRef = useRef<HTMLDivElement | null>(null);
+    const [surfaceWidth, setSurfaceWidth] = useState(() =>
       typeof window === "undefined" ? 0 : window.innerWidth
     );
 
@@ -424,10 +425,21 @@ export function createRaffleScreen() {
 
     useEffect(() => {
       if (typeof window === "undefined") return;
-      const handleResize = () => setViewportWidth(window.innerWidth);
+      const handleResize = () => {
+        const width = screenRef.current?.getBoundingClientRect().width || window.innerWidth;
+        setSurfaceWidth(width);
+      };
       handleResize();
+      const screenElement = screenRef.current;
+      const observer = typeof ResizeObserver === "undefined" || !screenElement
+        ? null
+        : new ResizeObserver(handleResize);
+      if (screenElement) observer?.observe(screenElement);
       window.addEventListener("resize", handleResize);
-      return () => window.removeEventListener("resize", handleResize);
+      return () => {
+        observer?.disconnect();
+        window.removeEventListener("resize", handleResize);
+      };
     }, []);
 
     const handleTileDone = () => setDoneTiles((n) => n + 1);
@@ -444,8 +456,10 @@ export function createRaffleScreen() {
       ? { color: "white", textShadow: `0 0 40px rgba(${p.r},${p.g},${p.b},0.5), 0 0 100px rgba(${p.r},${p.g},${p.b},0.25), 0 2px 8px rgba(0,0,0,0.8)` }
       : { color: "white", textShadow: "0 2px 8px rgba(0,0,0,0.8)" };
     const screenStyle: CSSProperties = {
-      width: "100vw",
-      height: "100vh",
+      width: "100%",
+      height: "100%",
+      minWidth: 0,
+      minHeight: 0,
       fontFamily: fontFamily || undefined,
       backgroundColor: undefined,
     };
@@ -463,8 +477,8 @@ export function createRaffleScreen() {
     const slotPlaceholderHeight = Math.round(fontSize * 1.8);
     const slotCardPaddingX = 112;
     const slotViewportGutter = 64;
-    const slotMaxContentWidth = viewportWidth > 0
-      ? Math.max(240, viewportWidth - slotCardPaddingX - slotViewportGutter)
+    const slotMaxContentWidth = surfaceWidth > 0
+      ? Math.max(240, surfaceWidth - slotCardPaddingX - slotViewportGutter)
       : slotPlaceholderWidth;
     const slotScale = Math.min(1, slotMaxContentWidth / slotPlaceholderWidth);
     const slotVisibleWidth = Math.ceil(slotPlaceholderWidth * slotScale);
@@ -506,7 +520,8 @@ export function createRaffleScreen() {
 
       return (
         <div
-          className="w-full h-full relative flex flex-col items-center justify-center gap-6 select-none"
+          ref={screenRef}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-6 select-none overflow-hidden"
           style={screenStyle}
         >
           <p className="text-3xl tracking-[0.3em] uppercase" style={glowStyle}>
@@ -536,7 +551,8 @@ export function createRaffleScreen() {
     if (animType === "wheel") {
       return (
         <div
-          className="w-full h-full relative flex flex-col items-center justify-center gap-6 select-none"
+          ref={screenRef}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-6 select-none overflow-hidden"
           style={screenStyle}
         >
           <p className="text-3xl tracking-[0.3em] uppercase" style={glowStyle}>
@@ -569,7 +585,8 @@ export function createRaffleScreen() {
 
     return (
       <div
-        className="w-full h-full relative flex flex-col items-center justify-center gap-8 select-none"
+        ref={screenRef}
+        className="absolute inset-0 flex flex-col items-center justify-center gap-8 select-none overflow-hidden"
         style={screenStyle}
       >
         <p className="text-3xl tracking-[0.3em] uppercase" style={glowStyle}>
@@ -586,7 +603,7 @@ export function createRaffleScreen() {
               minHeight: slotVisibleHeight + 80,
             }}
           >
-            <div style={{ position: "relative", width: slotVisibleWidth, height: slotVisibleHeight, overflow: "hidden" }}>
+            <div className="relative w-(--slot-width) h-(--slot-height)" style={{ '--slot-width': `${slotVisibleWidth}px`, '--slot-height': `${slotVisibleHeight}px` } as CSSProperties}>
               {tilesContent && (
                 <div
                   style={{

@@ -52,6 +52,7 @@ interface ParticipantLine {
 }
 
 const RAFFLED_MARKER_PREFIX = /^(\s*)(?:\\?\*)+(?=\S)/;
+const PRESENTATION_ACTIVE_KEY = "presentationActive";
 
 function stripMarkdownLine(line: string): string {
   return line
@@ -127,6 +128,11 @@ export function createRaffleConfigurator(host: LumenHost) {
     const [newListName, setNewListName] = useState("");
     const [creatingList, setCreatingList] = useState(false);
 
+    const setPresentationActive = (active: boolean) => {
+      setStarted(active);
+      void host.data.json.set(PRESENTATION_ACTIVE_KEY, active);
+    };
+
     useEffect(() => {
       Promise.all([
         host.data.json.get<string>("participants", ""),
@@ -136,7 +142,8 @@ export function createRaffleConfigurator(host: LumenHost) {
         host.data.json.get<RaffleList[]>("lists", []),
         host.data.json.get<string | null>("activeListId", null),
         host.data.json.get<RaffleSettings>("settings", DEFAULT_SETTINGS),
-      ]).then(([p, rd, dnr, ad, ls, lid, st]) => {
+        host.data.json.get<boolean>(PRESENTATION_ACTIVE_KEY, false),
+      ]).then(([p, rd, dnr, ad, ls, lid, st, presentationActive]) => {
         setParticipants(p);
         setRemoveDuplicates(rd);
         setDoNotRepeat(dnr);
@@ -144,6 +151,11 @@ export function createRaffleConfigurator(host: LumenHost) {
         setLists(ls);
         setActiveListId(lid);
         setSettings({ ...DEFAULT_SETTINGS, ...st });
+        const shouldRestorePresentation = presentationActive && host.presentation.state() === "live" && host.presentation.isWindowOpen();
+        setStarted(shouldRestorePresentation);
+        if (!shouldRestorePresentation) {
+          void host.data.json.set(PRESENTATION_ACTIVE_KEY, false);
+        }
         setLoaded(true);
       });
 
@@ -152,10 +164,16 @@ export function createRaffleConfigurator(host: LumenHost) {
     }, []);
 
     useEffect(() => {
+      if (host.presentation.state() === "idle") {
+        setPresentationActive(false);
+      }
+
       const d = host.presentation.onStateChange((state) => {
-        if (state === "idle") setStarted(false);
+        if (state === "idle") setPresentationActive(false);
       });
-      return () => d.dispose();
+      return () => {
+        d.dispose();
+      };
     }, []);
 
     const parsedParticipants = parseParticipants(participants, removeDuplicates);
@@ -222,15 +240,21 @@ export function createRaffleConfigurator(host: LumenHost) {
     const allNames = () => parsedParticipants.map((participant) => participant.name);
     const presentationNames = () => (doNotRepeat || settings.wheelRemoveDrawn ? eligible : allNames());
 
-    const handleStart = () => {
+    const handleStart = async () => {
       const wheelParticipants = presentationNames();
       host.presentation.project("raffle-module.raffle-screen", {
         name: null, animationKey: 0, ...settings, participants: wheelParticipants, prizeIndex: -1,
       });
-      setStarted(true);
+      setPresentationActive(true);
     };
 
     const handleRaffle = async () => {
+      if (started && !host.presentation.isWindowOpen()) {
+        host.presentation.clear();
+        setPresentationActive(false);
+        return;
+      }
+
       if (eligible.length === 0) {
         host.ui.notify({ message: t("raffle.no_eligible"), level: "warn" });
         return;
@@ -265,7 +289,7 @@ export function createRaffleConfigurator(host: LumenHost) {
 
     const handleExit = () => {
       host.presentation.clear();
-      setStarted(false);
+      setPresentationActive(false);
     };
 
     const handleReset = async () => {
@@ -284,7 +308,7 @@ export function createRaffleConfigurator(host: LumenHost) {
       }
       if (started) {
         host.presentation.clear();
-        setStarted(false);
+        setPresentationActive(false);
       }
     };
 
