@@ -330,7 +330,7 @@ export function createRaffleConfigurator(host: LumenHost) {
           </Button>
         )}
 
-        <Card className="flex flex-1 flex-col gap-5 min-w-0 p-6 border-none rounded-r-none">
+        <Card className="flex flex-1 flex-col gap-5 min-w-0 p-6 border-none rounded-none rounded-r-none">
 
           <div className="flex items-center justify-between">
             <h2 className="text-lg leading-none font-bold m-0">{t("raffle.title")}</h2>
